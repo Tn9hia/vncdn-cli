@@ -55,6 +55,41 @@ func initializeConfig() error {
 	}
 	return nil
 }
+
+// GetDefaultProfile returns the credentials for the default profile
+func GetDefaultProfile() (string, string, error) {
+	var setting Profiles
+
+	// Initialize the configuration
+	if err := initializeConfig(); err != nil {
+		return "", "", fmt.Errorf("error initializing config: %w", err)
+	}
+
+	// Load profiles from config
+	if err := viper.Unmarshal(&setting); err != nil {
+		return "", "", fmt.Errorf("error unmarshalling profiles: %w", err)
+	}
+
+	if len(setting.Profiles) == 0 {
+		return "", "", fmt.Errorf("no profiles found. Please add a profile using 'cdnctl config add'")
+	}
+
+	// If no default profile is set, use the first one
+	defaultProfileName := setting.DefaultProfile
+	if defaultProfileName == "" && len(setting.Profiles) > 0 {
+		defaultProfileName = setting.Profiles[0].Name
+	}
+
+	// Find the default profile
+	for _, profile := range setting.Profiles {
+		if profile.Name == defaultProfileName {
+			return profile.AccessKey, profile.AccessKeySecret, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("default profile '%s' not found", defaultProfileName)
+}
+
 // Retrieve and display profiles
 func DisplayProfiles(profileName string, isRaw bool) (string, string, error) {
 	var setting Profiles
@@ -67,14 +102,14 @@ func DisplayProfiles(profileName string, isRaw bool) (string, string, error) {
 	// Load profiles from config
 	if err := viper.Unmarshal(&setting); err != nil {
 		fmt.Printf("error unmarshalling profiles: %v", err)
-		return "", "", nil
+		return "", "", err
 	}
 
 	if len(setting.Profiles) == 0 {
 		if !isRaw {
 			fmt.Println("No profiles found. Please add a profile using 'cdnctl config add'.")
 		}
-		return "", "", nil
+		return "", "", fmt.Errorf("no profiles found")
 	}
 
 	// Case: profileName được chỉ định
@@ -95,21 +130,25 @@ func DisplayProfiles(profileName string, isRaw bool) (string, string, error) {
 		if !isRaw {
 			fmt.Printf("Profile '%s' not found.\n", profileName)
 		}
-		return "", "", nil
+		return "", "", fmt.Errorf("profile '%s' not found", profileName)
 	}
 
 	// Nếu không có profileName và không phải raw thì in tất cả
 	if !isRaw {
+		fmt.Printf("Default Profile: %s\n\n", setting.DefaultProfile)
 		fmt.Println("Available CDN Profiles:")
 		for _, profile := range setting.Profiles {
-			fmt.Printf("Name: %s \n   AccessKey: %s\n   SecretKey: %s\n\n",
-				profile.Name, profile.AccessKey, profile.AccessKeySecret)
+			marker := ""
+			if profile.Name == setting.DefaultProfile {
+				marker = " (default)"
+			}
+			fmt.Printf("Name: %s%s\n   AccessKey: %s\n   SecretKey: %s\n\n",
+				profile.Name, marker, profile.AccessKey, profile.AccessKeySecret)
 		}
 	}
 
 	return "", "", nil
 }
-
 
 // Add profile
 func AddProfile(name, accessKey, accessKeySecret, defaultProfile string) error {
@@ -130,14 +169,6 @@ func AddProfile(name, accessKey, accessKeySecret, defaultProfile string) error {
 		}
 	}
 
-	// Check if default profile is set
-	if setting.DefaultProfile == "" {
-		setting.DefaultProfile = name
-		viper.Set("default_profile", setting.DefaultProfile)
-		if err := viper.WriteConfig(); err != nil {
-			return fmt.Errorf("error writing config file: %w", err)
-		}
-	}
 	// Append the new profile to the profiles slice
 	setting.Profiles = append(setting.Profiles, Profile{
 		Name:            name,
@@ -147,29 +178,21 @@ func AddProfile(name, accessKey, accessKeySecret, defaultProfile string) error {
 
 	// Set the updated profiles back to Viper
 	viper.Set("profiles", setting.Profiles)
+
+	// Check if default profile is empty and set it if necessary
+	if setting.DefaultProfile == "" || defaultProfile == "Yes" || defaultProfile == "yes" {
+		setting.DefaultProfile = name
+		viper.Set("default_profile", setting.DefaultProfile)
+	}
+
 	if err := viper.WriteConfig(); err != nil {
 		return fmt.Errorf("error writing config file: %w", err)
 	}
-
-	// Check if default profile is empty and set it if necessary
-	if setting.DefaultProfile == "" {
-		setting.DefaultProfile = name
-		viper.Set("default_profile", setting.DefaultProfile)
-		if err := viper.WriteConfig(); err != nil {
-			return fmt.Errorf("error writing config file: %w", err)
-		}
-	}
-
-	// Check if the profile is set as default
-	if defaultProfile == "Yes" || defaultProfile == "yes" {
-		setting.DefaultProfile = name
-		viper.Set("default_profile", setting.DefaultProfile)
-		if err := viper.WriteConfig(); err != nil {
-			return fmt.Errorf("error writing config file: %w", err)
-		}
-	}
 	
 	fmt.Printf("Profile '%s' added successfully.\n", name)
+	if setting.DefaultProfile == name {
+		fmt.Printf("Set as default profile.\n")
+	}
 	return nil
 }
 
@@ -189,6 +212,18 @@ func RemoveProfile(name string) error {
 	for i, p := range profile.Profiles {
 		if p.Name == name {
 			profile.Profiles = append(profile.Profiles[:i], profile.Profiles[i+1:]...)
+			
+			// If the removed profile was the default, clear default or set to first available
+			if profile.DefaultProfile == name {
+				if len(profile.Profiles) > 0 {
+					profile.DefaultProfile = profile.Profiles[0].Name
+					fmt.Printf("Default profile changed to '%s'.\n", profile.DefaultProfile)
+				} else {
+					profile.DefaultProfile = ""
+				}
+				viper.Set("default_profile", profile.DefaultProfile)
+			}
+			
 			viper.Set("profiles", profile.Profiles)
 			if err := viper.WriteConfig(); err != nil {
 				return fmt.Errorf("error writing config file: %w", err)

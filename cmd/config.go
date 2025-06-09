@@ -18,8 +18,6 @@ var addConfig = &cobra.Command{
 	Short: "Add a new CDN profile configuration",
 	Long: `Use this command to add a new CDN profile configuration. You will need to provide the necessary details such as profile name, token, and other relevant information.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// fmt.Println("Add config command executed")
-		// Here you can implement the logic to add a new CDN profile configuration
 		prompt := promptui.Prompt{
 			Label: "Enter Profile Name",
 		}
@@ -40,7 +38,7 @@ var addConfig = &cobra.Command{
 
 		prompt = promptui.Prompt{
 			Label: "Enter Access Key Secret",
-			HideEntered: true,
+			Mask: '*', // Use Mask instead of HideEntered
 		}
 		accessKeySecret, err := prompt.Run()
 		if err != nil {
@@ -59,7 +57,10 @@ var addConfig = &cobra.Command{
 			return
 		}
 
-		utils.AddProfile(profileName, accessKey, accessKeySecret, defaultProfile)
+		err = utils.AddProfile(profileName, accessKey, accessKeySecret, defaultProfile)
+		if err != nil {
+			fmt.Printf("Error adding profile: %v\n", err)
+		}
 	},
 }
 
@@ -68,8 +69,6 @@ var removeConfig = &cobra.Command{
 	Short: "Remove an existing CDN profile configuration",
 	Long: `Use this command to remove an existing CDN profile configuration. You will need to specify the profile name or ID of the configuration you want to remove.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// fmt.Println("Remove config command executed")
-		// Here you can implement the logic to remove an existing CDN profile configuration
 		prompt := promptui.Prompt{
 			Label: "Enter Profile Name to Remove",
 		}
@@ -78,7 +77,10 @@ var removeConfig = &cobra.Command{
 			fmt.Printf("Prompt failed %v\n", err)
 			return
 		}
-		utils.RemoveProfile(profileName)
+		err = utils.RemoveProfile(profileName)
+		if err != nil {
+			fmt.Printf("Error removing profile: %v\n", err)
+		}
 	},
 }
 
@@ -87,7 +89,6 @@ var viewConfig = &cobra.Command{
 	Short: "View existing CDN profile configurations",
 	Long: `Use this command to view all existing CDN profile configurations. It will display the details of each configuration, such as profile name, token, and other relevant information.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// fmt.Println("View config command executed")
 		if len(args) > 0 {
 			// If a profile name is provided, display that specific profile
 			profileName := args[0]
@@ -105,17 +106,5 @@ func init() {
 	configCmd.AddCommand(removeConfig)
 	configCmd.AddCommand(viewConfig)
 
-	rootCmd := &cobra.Command{Use: "cdncli"}
-
-
-	if err := rootCmd.Execute(); err != nil {
-        fmt.Println(err)
-    }
-
-
-	// You can define flags and configuration settings here if needed
-	// For example:
-	// configCmd.Flags().StringP("setting", "s", "", "Specify a setting to configure")
-	// configCmd.MarkFlagRequired("setting")
+	// REMOVED: The duplicate rootCmd initialization and execution that was causing issues
 }
-

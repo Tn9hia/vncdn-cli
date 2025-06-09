@@ -20,22 +20,42 @@ var (
 )
 
 func CallApi(method, url, uri string, requestBody interface{}, profileName string) ([]byte, error) {
-	// Get credentials
-	accessKey, accessKeySecret, err := DisplayProfiles(profileName, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve profile %s: %w", profileName, err)
+	// Get credentials - use default profile if profileName is empty
+	var accessKey, accessKeySecret string
+	var err error
+	
+	if profileName == "" {
+		// Try to get default profile
+		accessKey, accessKeySecret, err = GetDefaultProfile()
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve default profile: %w", err)
+		}
+	} else {
+		accessKey, accessKeySecret, err = DisplayProfiles(profileName, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve profile %s: %w", profileName, err)
+		}
 	}
 
-	// Marshal request body
+	if accessKey == "" || accessKeySecret == "" {
+		return nil, fmt.Errorf("no valid credentials found. Please add a profile using 'cdnctl config add'")
+	}
+
+	// Handle request body
 	var requestBodyJson string
-	if requestBody != nil {
+	switch v := requestBody.(type) {
+	case string:
+		requestBodyJson = v
+	case []byte:
+		requestBodyJson = string(v)
+	case nil:
+		requestBodyJson = "{}"
+	default:
 		requestBodyBytes, err := json.Marshal(requestBody)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
 		requestBodyJson = string(requestBodyBytes)
-	} else {
-		requestBodyJson = "{}"
 	}
 
 	// Generate authorization header
@@ -56,8 +76,12 @@ func CallApi(method, url, uri string, requestBody interface{}, profileName strin
 	req.Header.Set("X-SFD-Date", date)
 	req.Header.Set("X-SFD-Nonce", nonce)
 
+	// Debug output
+	fmt.Printf("Making %s request to: %s\n", method, url)
+	fmt.Printf("Request body: %s\n", requestBodyJson)
+
 	// Send the request
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send HTTP request: %w", err)
